@@ -283,7 +283,8 @@ def process_voice():
                 "message": "نام فایل صوتی خالی است."
             }), 400
 
-        content_type = audio_file.content_type or "نامشخص"
+        content_type_raw = audio_file.content_type or "نامشخص"
+        content_type_base = content_type_raw.split(";", 1)[0].strip().lower()
 
         allowed_mime_types = {
             "audio/webm",
@@ -297,15 +298,17 @@ def process_voice():
         }
 
         logger.info(
-            "Audio metadata: safe_filename=%s, mime_type=%s",
+            "Audio metadata: safe_filename=%s, mime_type_raw=%s, mime_type_base=%s",
             safe_filename or "unknown",
-            content_type
+            content_type_raw,
+            content_type_base
         )
 
-        if content_type not in allowed_mime_types:
+        if content_type_base not in allowed_mime_types:
             logger.error(
-                "Validation failed: unsupported MIME type=%s",
-                content_type
+                "Validation failed: unsupported MIME type raw=%s base=%s",
+                content_type_raw,
+                content_type_base
             )
 
             return jsonify({
