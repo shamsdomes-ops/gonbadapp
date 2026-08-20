@@ -43,6 +43,10 @@
             color: #0d6efd;
             font-weight: bold;
         }
+
+        #voiceStatus {
+            min-height: 24px;
+        }
     </style>
 </head>
 
@@ -94,47 +98,89 @@
             ثبت گزارش جدید
         </h6>
 
+        <div class="mb-3">
+            <label for="sender" class="form-label">
+                نام گزارش‌دهنده
+            </label>
+
+            <input
+                type="text"
+                id="sender"
+                class="form-control"
+                placeholder="مثلاً ناصر یا مهندس کریمی"
+            >
+        </div>
+
+
+        <div class="mb-3">
+            <label for="raw_text" class="form-label">
+                متن گزارش
+            </label>
+
+            <textarea
+                id="raw_text"
+                name="raw_text"
+                class="form-control"
+                rows="5"
+                required
+                placeholder="مثلاً: برای پروژه لواسان ۳۰ متر قوطی و ۲ بسته الکترود خریدیم، مبلغ ۸ میلیون شد."
+            ></textarea>
+        </div>
+
+
         <form method="POST" action="/">
+            <input type="hidden" name="sender" id="textSender">
 
-            <div class="mb-3">
-                <label for="sender" class="form-label">
-                    نام گزارش‌دهنده
-                </label>
-
-                <input
-                    type="text"
-                    id="sender"
-                    name="sender"
-                    class="form-control"
-                    placeholder="مثلاً ناصر یا مهندس کریمی"
-                >
-            </div>
-
-
-            <div class="mb-3">
-                <label for="raw_text" class="form-label">
-                    متن گزارش
-                </label>
-
-                <textarea
-                    id="raw_text"
-                    name="raw_text"
-                    class="form-control"
-                    rows="5"
-                    required
-                    placeholder="مثلاً: برای پروژه لواسان ۳۰ متر قوطی و ۲ بسته الکترود خریدیم، مبلغ ۸ میلیون شد."
-                ></textarea>
-            </div>
-
+            <input type="hidden" name="raw_text" id="textRawText">
 
             <button
                 type="submit"
                 class="btn btn-dark w-100 py-2"
+                id="textSubmitButton"
             >
                 ثبت و تحلیل هوشمند گزارش
             </button>
-
         </form>
+
+
+        <hr class="my-4">
+
+
+        <div>
+            <div class="fw-bold mb-2">
+                ثبت گزارش صوتی
+            </div>
+
+            <p class="text-muted small mb-3">
+                ابتدا نام گزارش‌دهنده را وارد کن، سپس ضبط را شروع کن.
+            </p>
+
+            <div class="d-flex gap-2">
+                <button
+                    type="button"
+                    id="startRecording"
+                    class="btn btn-outline-primary flex-fill"
+                >
+                    شروع ضبط
+                </button>
+
+                <button
+                    type="button"
+                    id="stopRecording"
+                    class="btn btn-outline-danger flex-fill"
+                    disabled
+                >
+                    توقف ضبط
+                </button>
+            </div>
+
+            <div
+                id="voiceStatus"
+                class="small text-muted mt-3"
+                aria-live="polite"
+            ></div>
+        </div>
+
     </div>
 
 
@@ -219,6 +265,179 @@
 <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
 ></script>
+
+
+<script>
+    const senderInput = document.getElementById("sender");
+    const rawTextInput = document.getElementById("raw_text");
+
+    const textSenderInput = document.getElementById("textSender");
+    const textRawTextInput = document.getElementById("textRawText");
+    const textSubmitButton = document.getElementById("textSubmitButton");
+
+    const startRecordingButton = document.getElementById("startRecording");
+    const stopRecordingButton = document.getElementById("stopRecording");
+    const voiceStatus = document.getElementById("voiceStatus");
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let mediaStream = null;
+
+
+    document.querySelector("form[action='/']").addEventListener("submit", function () {
+        textSenderInput.value = senderInput.value.trim();
+        textRawTextInput.value = rawTextInput.value.trim();
+    });
+
+
+    function showVoiceStatus(message, isError = false) {
+        voiceStatus.textContent = message;
+        voiceStatus.className = isError
+            ? "small text-danger mt-3"
+            : "small text-muted mt-3";
+    }
+
+
+    startRecordingButton.addEventListener("click", async function () {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showVoiceStatus(
+                "مرورگر شما قابلیت ضبط صدا را پشتیبانی نمی‌کند.",
+                true
+            );
+            return;
+        }
+
+        if (!senderInput.value.trim()) {
+            showVoiceStatus(
+                "لطفاً ابتدا نام گزارش‌دهنده را وارد کن.",
+                true
+            );
+            senderInput.focus();
+            return;
+        }
+
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+            audioChunks = [];
+
+            let mimeType = "";
+
+            if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+                mimeType = "audio/webm;codecs=opus";
+            } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+                mimeType = "audio/webm";
+            }
+
+            mediaRecorder = mimeType
+                ? new MediaRecorder(mediaStream, { mimeType: mimeType })
+                : new MediaRecorder(mediaStream);
+
+            mediaRecorder.addEventListener("dataavailable", function (event) {
+                if (event.data && event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            });
+
+            mediaRecorder.addEventListener("stop", async function () {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(function (track) {
+                        track.stop();
+                    });
+                }
+
+                if (audioChunks.length === 0) {
+                    showVoiceStatus(
+                        "فایل صوتی خالی است. لطفاً دوباره امتحان کن.",
+                        true
+                    );
+                    return;
+                }
+
+                const audioBlob = new Blob(audioChunks, {
+                    type: mediaRecorder.mimeType || "audio/webm"
+                });
+
+                const formData = new FormData();
+
+                formData.append("sender", senderInput.value.trim());
+                formData.append("audio", audioBlob, "voice-report.webm");
+
+                startRecordingButton.disabled = true;
+                stopRecordingButton.disabled = true;
+                showVoiceStatus("در حال ارسال و پردازش گزارش صوتی...");
+
+                try {
+                    const response = await fetch("/process_voice", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error("voice processing failed");
+                    }
+
+                    window.location.reload();
+
+                } catch (error) {
+                    startRecordingButton.disabled = false;
+                    stopRecordingButton.disabled = true;
+
+                    showVoiceStatus(
+                        "ارسال یا پردازش ویس انجام نشد. بعداً دوباره امتحان کن.",
+                        true
+                    );
+                }
+            });
+
+            mediaRecorder.start();
+
+            startRecordingButton.disabled = true;
+            stopRecordingButton.disabled = false;
+
+            showVoiceStatus(
+                "ضبط در حال انجام است. برای پایان، روی «توقف ضبط» بزن."
+            );
+
+        } catch (error) {
+            if (error.name === "NotAllowedError") {
+                showVoiceStatus(
+                    "مجوز استفاده از میکروفون داده نشد.",
+                    true
+                );
+            } else if (error.name === "NotFoundError") {
+                showVoiceStatus(
+                    "میکروفونی پیدا نشد.",
+                    true
+                );
+            } else {
+                showVoiceStatus(
+                    "امکان شروع ضبط وجود ندارد.",
+                    true
+                );
+            }
+        }
+    });
+
+
+    stopRecordingButton.addEventListener("click", function () {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+
+            startRecordingButton.disabled = true;
+            stopRecordingButton.disabled = true;
+
+            showVoiceStatus("ضبط متوقف شد؛ در حال آماده‌سازی فایل صوتی...");
+        }
+    });
+</script>
 
 </body>
 </html>
